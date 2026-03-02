@@ -1,0 +1,164 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════
+# PROSPECTION SYSTEM - lumoradata.com
+# Services : Redis + WAHA + Scraper + Backend
+# PostgreSQL : container existant pg-db-1 (réseau pg_default)
+# n8n        : container existant n8n-n8n-1 (réseau n8n_default)
+# WAHA       : port 3005 (3000 occupé par Next.js)
+# ═══════════════════════════════════════════════════════════
+
+networks:
+  # ── Réseau interne de ce projet ────────────────────────
+  prospection-net:
+    driver: bridge
+
+  # ── Réseaux EXISTANTS (accès lecture seule) ────────────
+  pg_default:
+    external: true   # réseau du container pg-db-1
+  n8n_default:
+    external: true   # réseau du container n8n-n8n-1
+
+volumes:
+  redis_data:
+  waha_data:
+  scraper_logs:
+
+services:
+
+  # ─────────────────────────────────────────────────────
+  # Redis  (queue Bull + dedup scraper)
+  # ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: prospection-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-RedisPass2024!}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"   # local seulement, pas exposé publiquement
+    networks:
+      - prospection-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-RedisPass2024!}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────
+  # WAHA  — WhatsApp HTTP API
+  # Port 3005 (3000 = Next.js dashboard)
+  # ─────────────────────────────────────────────────────
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: prospection-waha
+    restart: unless-stopped
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-waha_secret_key_change_me}
+      WHATSAPP_SWAGGER_ENABLED: "true"
+      # Webhook vers backend (réseau interne Docker)
+      WHATSAPP_HOOK_URL: http://prospection-backend:4000/api/whatsapp/webhook
+      WHATSAPP_HOOK_EVENTS: message,message.ack,session.status
+      WHATSAPP_START_SESSION_TIMEOUT: 90
+      WHATSAPP_API_USERNAME: ${WAHA_USERNAME:-admin}
+      WHATSAPP_API_PASSWORD: ${WAHA_PASSWORD:-NMI2003lArry}
+      # Logs
+      LOG_LEVEL: info
+    volumes:
+      - waha_data:/app/.data
+    ports:
+      - "3005:3000"   # interne WAHA écoute 3000, on expose en 3005
+    networks:
+      - prospection-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────────────
+  # Scraper  — Scrapy + Playwright + API Flask
+  # ─────────────────────────────────────────────────────
+  scraper:
+    build:
+      context: ../scraper
+      dockerfile: Dockerfile
+    image: prospection-scraper:latest
+    container_name: prospection-scraper
+    restart: unless-stopped
+    environment:
+      # PostgreSQL via réseau pg_default
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prospection_user}:${POSTGRES_PASSWORD}@pg-db-1:5432/${POSTGRES_DB:-prospection}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPass2024!}@redis:6379
+      SCRAPER_API_KEY: ${SCRAPER_API_KEY:-scraper_secret_change_me}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - scraper_logs:/app/logs
+    ports:
+      - "127.0.0.1:5000:5000"   # local seulement
+    networks:
+      - prospection-net
+      - pg_default               # accès direct à pg-db-1
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────
+  # Backend Node.js  — API REST pour dashboard
+  # ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: prospection-backend:latest
+    container_name: prospection-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # PostgreSQL via réseau pg_default
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prospection_user}:${POSTGRES_PASSWORD}@pg-db-1:5432/${POSTGRES_DB:-prospection}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPass2024!}@redis:6379
+      # WAHA accessible via réseau interne (nom container)
+      WAHA_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY:-waha_secret_key_change_me}
+      # Scraper
+      SCRAPER_URL: http://scraper:5000
+      SCRAPER_API_KEY: ${SCRAPER_API_KEY:-scraper_secret_change_me}
+      # Auth
+      JWT_SECRET: ${JWT_SECRET:-jwt_super_secret_change_me}
+      # n8n (webhook public)
+      N8N_WEBHOOK_URL: https://${N8N_HOST:-n8n.lumoradata.com}
+      # Anti-ban config
+      WA_MIN_DELAY: ${WA_MIN_DELAY:-30}
+      WA_MAX_DELAY: ${WA_MAX_DELAY:-120}
+      SENDER_NAME: ${SENDER_NAME:-Notre équipe}
+      SENDER_COMPANY: ${SENDER_COMPANY:-}
+    ports:
+      - "127.0.0.1:4000:4000"   # Nginx proxyfie api.lumoradata.com → 4000
+    networks:
+      - prospection-net
+      - pg_default               # accès direct à pg-db-1
+      - n8n_default              # accès direct à n8n-n8n-1 (webhooks internes)
+    depends_on:
+      redis:
+        condition: service_healthy
+      waha:
+        condition: service_started
+    healthcheck:
+      disable: true

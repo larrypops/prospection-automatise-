@@ -1,0 +1,142 @@
+{
+  "name": "03 - Envoi WhatsApp Anti-Ban",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 9 * * 1-6" }] }
+      },
+      "name": "Cron 9h Lun-Sam",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [180, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT n.session_name, n.daily_limit, n.daily_sent, (n.daily_limit - n.daily_sent) AS remaining FROM whatsapp_numbers n WHERE n.is_active = true AND n.is_banned = false AND n.daily_sent < n.daily_limit ORDER BY n.daily_sent ASC LIMIT 1",
+        "options": {}
+      },
+      "name": "Numéro WA Disponible",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "credentials": { "postgres": { "id": "1", "name": "PostgreSQL Prospection" } },
+      "position": [400, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [{ "leftValue": "={{ $json.remaining }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }]
+        }
+      },
+      "name": "Reste des envois?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [620, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.name, c.phone_whatsapp, c.city, c.category, c.score FROM companies c WHERE c.status = 'qualified' AND c.phone_whatsapp IS NOT NULL AND c.phone_whatsapp != '' AND (c.last_contacted_at IS NULL OR c.next_followup_at <= NOW()) ORDER BY c.score DESC LIMIT {{ $json.remaining }}",
+        "options": {}
+      },
+      "name": "Leads à Contacter",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "credentials": { "postgres": { "id": "1", "name": "PostgreSQL Prospection" } },
+      "position": [840, 400]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "name": "Un Lead à la Fois",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1060, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT body FROM message_templates WHERE channel='whatsapp' AND type='first_contact' AND is_active=true ORDER BY RANDOM() LIMIT 1",
+        "options": {}
+      },
+      "name": "Template Aléatoire",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "credentials": { "postgres": { "id": "1", "name": "PostgreSQL Prospection" } },
+      "position": [1280, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead     = $('Un Lead à la Fois').item.json;\nconst template = $('Template Aléatoire').item.json;\nconst waNum    = $('Numéro WA Disponible').item.json;\n\nconst nom = (lead.name || '').split(' ')[0] || 'Bonjour';\n\nlet message = (template.body || '')\n  .replace(/{{contact_name}}/g,   nom)\n  .replace(/{{company_name}}/g,   lead.name    || '')\n  .replace(/{{city}}/g,           lead.city    || '')\n  .replace(/{{category}}/g,       lead.category|| '')\n  .replace(/{{sender_name}}/g,    $env.SENDER_NAME    || 'Notre équipe')\n  .replace(/{{sender_company}}/g, $env.SENDER_COMPANY || '');\n\n// Délai aléatoire 30-120s\nconst minD = parseInt($env.WA_MIN_DELAY || '30');\nconst maxD = parseInt($env.WA_MAX_DELAY || '120');\nconst delayMs = Math.floor(Math.random() * (maxD - minD) + minD) * 1000;\n\nreturn [{\n  json: {\n    company_id:   lead.id,\n    to_number:    lead.phone_whatsapp,\n    message,\n    session_name: waNum.session_name,\n    delay_ms:     delayMs,\n    lead_name:    lead.name,\n    skip_delay:   true   // délai géré par le nœud Wait suivant\n  }\n}];"
+      },
+      "name": "Personnaliser Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 400]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "resumeAmount": "={{ Math.round($json.delay_ms / 1000) }}",
+        "resumeUnit": "seconds",
+        "options": {}
+      },
+      "name": "Délai Anti-Ban",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1720, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://prospection-backend:4000/api/whatsapp/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"company_id\":   \"{{ $json.company_id }}\",\n  \"to_number\":    \"{{ $json.to_number }}\",\n  \"message\":      \"{{ $json.message }}\",\n  \"session_name\": \"{{ $json.session_name }}\",\n  \"skip_delay\":   true\n}",
+        "options": { "timeout": 30000 }
+      },
+      "name": "Envoyer via Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1940, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.success }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }]
+        }
+      },
+      "name": "Succès?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [2160, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(`✅ Envoyé à ${$('Personnaliser Message').item.json.lead_name} (${$('Personnaliser Message').item.json.to_number})`);\nreturn [$input.item];"
+      },
+      "name": "Log Succès",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2380, 300]
+    }
+  ],
+  "connections": {
+    "Cron 9h Lun-Sam":        { "main": [[{ "node": "Numéro WA Disponible", "type": "main", "index": 0 }]] },
+    "Numéro WA Disponible":   { "main": [[{ "node": "Reste des envois?",    "type": "main", "index": 0 }]] },
+    "Reste des envois?":      { "main": [[{ "node": "Leads à Contacter",    "type": "main", "index": 0 }]] },
+    "Leads à Contacter":      { "main": [[{ "node": "Un Lead à la Fois",    "type": "main", "index": 0 }]] },
+    "Un Lead à la Fois":      { "main": [[{ "node": "Template Aléatoire",   "type": "main", "index": 0 }]] },
+    "Template Aléatoire":     { "main": [[{ "node": "Personnaliser Message","type": "main", "index": 0 }]] },
+    "Personnaliser Message":  { "main": [[{ "node": "Délai Anti-Ban",       "type": "main", "index": 0 }]] },
+    "Délai Anti-Ban":         { "main": [[{ "node": "Envoyer via Backend",  "type": "main", "index": 0 }]] },
+    "Envoyer via Backend":    { "main": [[{ "node": "Succès?",              "type": "main", "index": 0 }]] },
+    "Succès?":                { "main": [[{ "node": "Log Succès",           "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true, "errorWorkflow": "" },
+  "tags": ["whatsapp", "anti-ban", "lumoradata"]
+}

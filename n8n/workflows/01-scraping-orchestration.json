@@ -1,0 +1,60 @@
+{
+  "name": "01 - Scraping Orchestration",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 2 * * 1-5" }] } },
+      "name": "Cron 2h Lun-Ven", "type": "n8n-nodes-base.scheduleTrigger", "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tasks = [\n  {query:'restaurant',location:'Yaoundé, Cameroun',max_results:50},\n  {query:'salon de coiffure',location:'Yaoundé, Cameroun',max_results:40},\n  {query:'boutique vêtements',location:'Douala, Cameroun',max_results:40},\n  {query:'hotel',location:'Yaoundé, Cameroun',max_results:30},\n  {query:'pharmacie',location:'Yaoundé, Cameroun',max_results:30}\n];\nreturn tasks.map(t=>({json:t}));"
+      },
+      "name": "Config Tâches", "type": "n8n-nodes-base.code", "position": [400, 300]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "name": "Une Tâche à la Fois", "type": "n8n-nodes-base.splitInBatches", "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://prospection-scraper:5000/api/scrape/google-maps",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-API-Key", "value": "={{ $env.SCRAPER_API_KEY }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"query\":\"{{ $json.query }}\",\"location\":\"{{ $json.location }}\",\"max_results\":{{ $json.max_results }},\"n8n_execution_id\":\"{{ $execution.id }}\"}",
+        "options": { "timeout": 30000 }
+      },
+      "name": "Lancer Scraper", "type": "n8n-nodes-base.httpRequest", "position": [840, 300]
+    },
+    {
+      "parameters": { "resume": "timeInterval", "resumeAmount": 10, "resumeUnit": "minutes", "options": {} },
+      "name": "Attendre 10min", "type": "n8n-nodes-base.wait", "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://prospection-scraper:5000/api/scrape/status/{{ $('Lancer Scraper').item.json.job_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-API-Key", "value": "={{ $env.SCRAPER_API_KEY }}" }] }
+      },
+      "name": "Check Statut Job", "type": "n8n-nodes-base.httpRequest", "position": [1280, 300]
+    },
+    {
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.status }}", "rightValue": "done", "operator": { "type": "string", "operation": "equals" } }] }
+      },
+      "name": "Terminé?", "type": "n8n-nodes-base.filter", "position": [1500, 300]
+    }
+  ],
+  "connections": {
+    "Cron 2h Lun-Ven":      { "main": [[{ "node": "Config Tâches",        "type": "main", "index": 0 }]] },
+    "Config Tâches":         { "main": [[{ "node": "Une Tâche à la Fois",  "type": "main", "index": 0 }]] },
+    "Une Tâche à la Fois":   { "main": [[{ "node": "Lancer Scraper",       "type": "main", "index": 0 }]] },
+    "Lancer Scraper":        { "main": [[{ "node": "Attendre 10min",       "type": "main", "index": 0 }]] },
+    "Attendre 10min":        { "main": [[{ "node": "Check Statut Job",     "type": "main", "index": 0 }]] },
+    "Check Statut Job":      { "main": [[{ "node": "Terminé?",             "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["scraping", "lumoradata"]
+}
