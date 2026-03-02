@@ -23,6 +23,7 @@ volumes:
   redis_data:
   waha_data:
   scraper_logs:
+  scheduler_logs:
 
 services:
 
@@ -162,3 +163,33 @@ services:
         condition: service_started
     healthcheck:
       disable: true
+
+  # ─────────────────────────────────────────────────────
+  # Scheduler  — Service de planification des tâches
+  # Remplace n8n pour l'automatisation
+  # ─────────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: ../scheduler
+      dockerfile: Dockerfile
+    image: prospection-scheduler:latest
+    container_name: prospection-scheduler
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_URL: http://prospection-backend:4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prospection_user}:${POSTGRES_PASSWORD}@pg-db-1:5432/${POSTGRES_DB:-prospection}
+      WA_MIN_DELAY: ${WA_MIN_DELAY:-30}
+      WA_MAX_DELAY: ${WA_MAX_DELAY:-120}
+      DAILY_LIMIT: ${DAILY_LIMIT:-20}
+      TZ: Africa/Douala
+    volumes:
+      - scheduler_logs:/app/logs
+    networks:
+      - prospection-net
+      - pg_default
+    depends_on:
+      backend:
+        condition: service_started
+      scraper:
+        condition: service_started
