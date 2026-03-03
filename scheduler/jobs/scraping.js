@@ -189,8 +189,24 @@ async function scrapingJob() {
     }
 
     logger.info("═══════════════════════════════════════════════════════════");
-    logger.info(`  📊 RÉSULTATS: ${totalSuccess} succès, ${totalFailed} échecs`);
+    logger.info(`  📊 RÉSULTATS SCRAPING: ${totalSuccess} succès, ${totalFailed} échecs`);
     logger.info("═══════════════════════════════════════════════════════════");
+
+    // 4. Lancer la vérification WhatsApp automatique
+    logger.info("🔍 Lancement vérification WhatsApp automatique...");
+    try {
+        const verifyResponse = await axios.post(
+            `${BACKEND_URL}/api/companies/bulk/check-whatsapp`,
+            {},
+            { timeout: 10000 }
+        );
+        if (verifyResponse.data.success) {
+            logger.info("✅ Vérification WhatsApp démarrée en arrière-plan");
+            logger.info("⏳ Les leads seront vérifiés progressivement avant l'envoi");
+        }
+    } catch (verifyError) {
+        logger.warn(`⚠️  Erreur lancement vérification WhatsApp: ${verifyError.message}`);
+    }
 }
 
 module.exports = scrapingJob;
