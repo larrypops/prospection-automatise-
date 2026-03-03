@@ -150,17 +150,45 @@ class PostgresPipeline:
         """Convertit un numéro brut en format E164 pour WhatsApp (+237XXXXXXXXX)"""
         if not raw:
             return None
-        cleaned = re.sub(r'[\s\-\.\(\)]', '', str(raw))
+        
+        # Nettoyage : garder uniquement chiffres et +
+        cleaned = re.sub(r'[^\d+]', '', str(raw))
+        
+        # Supprime les + en trop
+        if cleaned.count('+') > 1:
+            cleaned = '+' + cleaned.replace('+', '')
+        
+        # 1. Format international complet déjà présent (+237XXXXXXXX)
+        if re.match(r'^\+237[6-9]\d{8}$', cleaned):
+            return cleaned
+        
+        # 2. Format avec 00237 au début → convertir en +237
+        if re.match(r'^00237[6-9]\d{8}$', cleaned):
+            return '+237' + cleaned[5:]
+        
+        # 3. Format avec 237 au début mais sans + → ajouter +
+        if re.match(r'^237[6-9]\d{8}$', cleaned):
+            return '+' + cleaned
+        
+        # 4. Format local camerounais (commence par 6 ou 2 ou 3 et 9 chiffres)
+        if re.match(r'^[623]\d{8}$', cleaned):
+            return '+237' + cleaned
+        
+        # 5. Essayer phonenumbers comme fallback
         try:
             parsed = phonenumbers.parse(cleaned, country)
             if phonenumbers.is_valid_number(parsed):
                 return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
         except:
             pass
-        # Fallback Cameroun
+        
+        # 6. Dernier fallback pour les numéros avec indicatif
         digits = re.sub(r'\D', '', cleaned)
         if len(digits) == 9 and digits[0] in ('6', '2', '3'):
             return f"+237{digits}"
         if len(digits) == 12 and digits.startswith('237'):
             return f"+{digits}"
+        if len(digits) == 13 and digits.startswith('00237'):
+            return f"+237{digits[5:]}"
+        
         return None

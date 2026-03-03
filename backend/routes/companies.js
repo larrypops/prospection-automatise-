@@ -1,6 +1,7 @@
 "use strict";
 const express = require("express");
 const { query } = require("../utils/db");
+const { formatWhatsAppNumber } = require("../utils/phoneFormatter");
 const { verifyAndUpdateCompany, verifyAllPendingCompanies } = require("../services/whatsappChecker");
 const router = express.Router();
 
@@ -126,6 +127,19 @@ router.post("/", async (req, res) => {
 
         if (!name) return res.status(400).json({ error: "name requis" });
 
+        // Formater automatiquement le numéro de téléphone
+        let formattedPhone = phone;
+        let formattedWhatsApp = phone_whatsapp;
+        
+        // Si phone fourni mais pas phone_whatsapp, formater phone
+        if (phone && !phone_whatsapp) {
+            formattedWhatsApp = formatWhatsAppNumber(phone);
+        }
+        // Si phone_whatsapp fourni, s'assurer qu'il est bien formaté
+        else if (phone_whatsapp) {
+            formattedWhatsApp = formatWhatsAppNumber(phone_whatsapp);
+        }
+
         // Dédup: vérifier si le lead existe déjà (par google_place_id, facebook_page_id, ou phone+name)
         let existing = null;
         if (google_place_id) {
@@ -134,10 +148,10 @@ router.post("/", async (req, res) => {
         } else if (facebook_page_id) {
             const r = await query("SELECT id, name FROM companies WHERE facebook_page_id = $1", [facebook_page_id]);
             existing = r.rows[0];
-        } else if (phone) {
+        } else if (formattedWhatsApp) {
             const r = await query(
-                "SELECT id, name FROM companies WHERE (phone = $1 OR phone_whatsapp = $1) AND LOWER(name) = LOWER($2)",
-                [phone, name]
+                "SELECT id, name FROM companies WHERE phone_whatsapp = $1 AND LOWER(name) = LOWER($2)",
+                [formattedWhatsApp, name]
             );
             existing = r.rows[0];
         }
@@ -157,7 +171,7 @@ router.post("/", async (req, res) => {
                  google_place_id, facebook_page_id)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             RETURNING *
-        `, [name, category, phone, phone_whatsapp, email, website,
+        `, [name, category, formattedPhone, formattedWhatsApp, email, website,
             address, city, region, country, source, notes, tags,
             google_place_id || null, facebook_page_id || null]);
 
