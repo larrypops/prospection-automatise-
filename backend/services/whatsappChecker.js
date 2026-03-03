@@ -127,7 +127,7 @@ async function verifyAndUpdateCompany(companyId, phone) {
             [companyId]
         );
         
-        if (existing.rows[0]?.has_whatsapp !== null) {
+        if (existing.rows[0]?.has_whatsapp === true) {
             logger.info(`⏩ Entreprise ${companyId} déjà vérifiée`);
             return existing.rows[0];
         }
@@ -156,7 +156,7 @@ async function verifyAllPendingCompanies() {
         const pending = await query(`
             SELECT id, phone, phone_whatsapp 
             FROM companies 
-            WHERE has_whatsapp IS NULL 
+            WHERE (has_whatsapp IS NULL OR has_whatsapp = false) 
               AND (phone IS NOT NULL OR phone_whatsapp IS NOT NULL)
             LIMIT 100
         `);
