@@ -200,6 +200,7 @@ class MetaAdsSpider(scrapy.Spider):
             item["source_url"] = response.url
             item["job_id"]     = self.job_id
             item["city"]       = self.location.split(",")[0].strip()
+            item["scrape_query"] = self.query 
 
             try:
                 await page.wait_for_selector("h1, [data-key='page-name']", timeout=10000)

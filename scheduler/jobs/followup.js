@@ -37,19 +37,40 @@ function sleep(ms) {
 function buildFollowupMessage(leadName, followupCount) {
     switch (followupCount) {
         case 1:
-            return `Bonjour, je reviens vers vous concernant ${leadName}. Avez-vous eu l'occasion de réfléchir à la mise en place d'un système automatisé de suivi financier pour votre activité ?
+            return `Bonjour,
 
-Je serais ravi d'échanger 10 minutes avec vous pour vous montrer concrètement ce que ça peut changer. 🙏`;
+Je me permets de revenir vers vous au sujet de mon message de l'autre jour.
+
+Je sais que vous avez beaucoup de choses à gérer au quotidien chez ${leadName} — c'est exactement pour ça que ce qu'on met en place peut faire une vraie différence.
+
+Si vous avez 20 minutes cette semaine, je suis disponible pour vous montrer concrètement comment ça fonctionne.
+
+Bonne journée,
+Larry Mbili`;
 
         case 2:
-            return `Bonsoir, je comprends que vous êtes occupé(e). Je voulais juste partager que plusieurs entreprises comme ${leadName} ont déjà optimisé leur gestion financière avec nos solutions.
+            return `Bonjour,
 
-Si ce n'est pas une priorité en ce moment, pas de souci. Mais si vous changez d'avis, je reste disponible. 😊`;
+Je reviens vers vous une dernière fois concernant ${leadName}.
+
+On vient justement de terminer une mise en place pour une entreprise similaire à la vôtre — le dirigeant m'a dit que sa première réaction était de regretter de ne pas l'avoir fait plus tôt.
+
+Je reste disponible si vous souhaitez qu'on en parle.
+
+Bonne journée,
+Larry`;
 
         case 3:
-            return `Bonjour, dernier message de ma part concernant l'automatisation financière pour ${leadName}.
+            return `Bonjour,
 
-Si jamais vous souhaitez découvrir comment piloter vos chiffres en temps réel, vous pouvez me contacter à tout moment. Bonne continuation ! 🚀`;
+Je ne voudrais pas vous importuner davantage, mais avant de clore ce sujet je voulais vous faire une proposition.
+
+Je vous offre une démonstration gratuite de 30 minutes, sans engagement, pour que vous voyiez exactement ce qu'on pourrait automatiser chez ${leadName} et le temps que ça vous ferait gagner concrètement.
+
+Si ça vous intéresse, il suffit de me répondre ici et on fixe un créneau à votre convenance.
+
+Bonne journée,
+Larry`;
 
         default:
             return `Bonjour, je reviens vers vous concernant ${leadName}. Avez-vous eu l'occasion de réfléchir à notre proposition ?`;

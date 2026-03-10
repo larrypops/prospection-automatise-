@@ -1,7 +1,6 @@
 "use strict";
 const express = require("express");
 const { query } = require("../utils/db");
-const { formatWhatsAppNumber } = require("../utils/phoneFormatter");
 const { verifyAndUpdateCompany, verifyAllPendingCompanies } = require("../services/whatsappChecker");
 const router = express.Router();
 
@@ -51,6 +50,76 @@ router.get("/new", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════
+// GET /api/companies/by-keyword/:keyword          ← NOUVEAU
+// Recherche par mot-clé de scraping + stats
+// Query params: page, limit, source, city, status
+// ═══════════════════════════════════════════════════════
+router.get("/by-keyword/:keyword", async (req, res) => {
+    try {
+        const { keyword } = req.params;
+        const { page = 1, limit = 50, source, city, status } = req.query;
+
+        const conditions = [`scrape_query ILIKE $1`];
+        const params = [`%${keyword}%`];
+        let idx = 2;
+
+        if (source) { conditions.push(`source = $${idx++}`);   params.push(source); }
+        if (city)   { conditions.push(`city ILIKE $${idx++}`); params.push(`%${city}%`); }
+        if (status) { conditions.push(`status = $${idx++}`);   params.push(status); }
+
+        const where = `WHERE ${conditions.join(" AND ")}`;
+
+        const total = +(await query(`SELECT COUNT(*) FROM companies ${where}`, params)).rows[0].count;
+
+        const data = await query(`
+            SELECT
+                id, name, category, phone, phone_whatsapp, email,
+                website, address, city, region, source, source_url,
+                scrape_query, status, score, rating, created_at
+            FROM companies
+            ${where}
+            ORDER BY score DESC, created_at DESC
+            LIMIT $${idx} OFFSET $${idx + 1}
+        `, [...params, +limit, (+page - 1) * +limit]);
+
+        const bySource = await query(`
+            SELECT source, COUNT(*) AS total
+            FROM companies ${where}
+            GROUP BY source ORDER BY total DESC
+        `, params);
+
+        const byCity = await query(`
+            SELECT city, COUNT(*) AS total
+            FROM companies ${where}
+            GROUP BY city ORDER BY total DESC LIMIT 10
+        `, params);
+
+        const byStatus = await query(`
+            SELECT status, COUNT(*) AS total
+            FROM companies ${where}
+            GROUP BY status ORDER BY total DESC
+        `, params);
+
+        res.json({
+            keyword,
+            data: data.rows,
+            pagination: {
+                total,
+                page:  +page,
+                limit: +limit,
+                pages: Math.ceil(total / +limit),
+            },
+            stats: {
+                total,
+                by_source: bySource.rows,
+                by_city:   byCity.rows,
+                by_status: byStatus.rows,
+            },
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════
 // GET /api/companies
 // Liste complète avec tous les filtres
 // ═══════════════════════════════════════════════════════
@@ -70,7 +139,8 @@ router.get("/", async (req, res) => {
         if (city)        { conditions.push(`city ILIKE $${idx++}`);              params.push(`%${city}%`); }
         if (category)    { conditions.push(`category ILIKE $${idx++}`);          params.push(`%${category}%`); }
         if (source)      { conditions.push(`source = $${idx++}`);                params.push(source); }
-        if (search)      { conditions.push(`(name ILIKE $${idx} OR phone ILIKE $${idx} OR phone_whatsapp ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
+        // ← MODIFIÉ : scrape_query ajouté dans la recherche
+        if (search)      { conditions.push(`(name ILIKE $${idx} OR phone ILIKE $${idx} OR phone_whatsapp ILIKE $${idx} OR scrape_query ILIKE $${idx})`); params.push(`%${search}%`); idx++; }
         if (has_phone === "true") conditions.push("phone_whatsapp IS NOT NULL");
         if (has_whatsapp === "true") conditions.push("has_whatsapp = true");
         if (has_whatsapp === "false") conditions.push("has_whatsapp = false");
@@ -127,19 +197,6 @@ router.post("/", async (req, res) => {
 
         if (!name) return res.status(400).json({ error: "name requis" });
 
-        // Formater automatiquement le numéro de téléphone
-        let formattedPhone = phone;
-        let formattedWhatsApp = phone_whatsapp;
-        
-        // Si phone fourni mais pas phone_whatsapp, formater phone
-        if (phone && !phone_whatsapp) {
-            formattedWhatsApp = formatWhatsAppNumber(phone);
-        }
-        // Si phone_whatsapp fourni, s'assurer qu'il est bien formaté
-        else if (phone_whatsapp) {
-            formattedWhatsApp = formatWhatsAppNumber(phone_whatsapp);
-        }
-
         // Dédup: vérifier si le lead existe déjà (par google_place_id, facebook_page_id, ou phone+name)
         let existing = null;
         if (google_place_id) {
@@ -148,10 +205,10 @@ router.post("/", async (req, res) => {
         } else if (facebook_page_id) {
             const r = await query("SELECT id, name FROM companies WHERE facebook_page_id = $1", [facebook_page_id]);
             existing = r.rows[0];
-        } else if (formattedWhatsApp) {
+        } else if (phone) {
             const r = await query(
-                "SELECT id, name FROM companies WHERE phone_whatsapp = $1 AND LOWER(name) = LOWER($2)",
-                [formattedWhatsApp, name]
+                "SELECT id, name FROM companies WHERE (phone = $1 OR phone_whatsapp = $1) AND LOWER(name) = LOWER($2)",
+                [phone, name]
             );
             existing = r.rows[0];
         }
@@ -171,7 +228,7 @@ router.post("/", async (req, res) => {
                  google_place_id, facebook_page_id)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             RETURNING *
-        `, [name, category, formattedPhone, formattedWhatsApp, email, website,
+        `, [name, category, phone, phone_whatsapp, email, website,
             address, city, region, country, source, notes, tags,
             google_place_id || null, facebook_page_id || null]);
 
@@ -201,7 +258,6 @@ router.put("/bulk/status", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
 // POST /api/companies/bulk/check-whatsapp
 // Vérification WhatsApp en masse pour les entreprises en attente
 // ═══════════════════════════════════════════════════════
@@ -218,6 +274,7 @@ router.post("/bulk/check-whatsapp", async (req, res) => {
         res.status(500).json({ error: e.message }); 
     }
 });
+
 // ═══════════════════════════════════════════════════════
 // POST /api/companies/:id/check-whatsapp
 // Vérification manuelle WhatsApp pour une entreprise
@@ -257,6 +314,8 @@ router.post("/:id/check-whatsapp", async (req, res) => {
         res.status(500).json({ error: e.message }); 
     }
 });
+
+// ═══════════════════════════════════════════════════════
 // PUT /api/companies/:id/status
 // Mise à jour du statut d'un seul lead
 // Utilisé par la route WhatsApp après envoi
@@ -282,10 +341,6 @@ router.put("/:id/status", async (req, res) => {
         res.json({ success: true, company: r.rows[0] });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
-
-
-
 
 // ═══════════════════════════════════════════════════════
 // PUT /api/companies/:id

@@ -39,6 +39,7 @@ app.use("/api/scraper",    require("./routes/scraper"));
 app.use("/api/stats",      require("./routes/stats"));
 app.use("/api/auth",       require("./routes/auth"));
 app.use("/api/config",     require("./routes/config"));
+app.use("/api/email",      require("./routes/email"));
 
 // ── Health ────────────────────────────────────────────────
 app.get("/health", async (req, res) => {
@@ -53,10 +54,10 @@ app.use((req, res) => res.status(404).json({ error: "Route introuvable" }));
 app.use((err, req, res, next) => {
     logger.error(err.message, { stack: err.stack });
     res.status(err.status || 500).json({
-        error: process.env.NODE_ENV === "production" ? "Erreur serveur" : err.message
+        error: process.env.NODE_ENV === "production" ? "Erreur serveur" : err.message,
     });
 });
 
-app.listen(PORT, "0.0.0.0", () => logger.info(`✅ Backend démarré port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => logger.info(`Backend démarré port ${PORT}`));
 process.on("unhandledRejection", r => logger.error("unhandledRejection:", r));
 module.exports = app;

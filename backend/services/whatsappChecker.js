@@ -28,17 +28,13 @@ async function checkWhatsAppNumber(phone) {
         logger.info(`🔍 Vérification WhatsApp pour: ${formattedPhone}`);
 
         // Appel API WAHA pour vérifier si le numéro existe sur WhatsApp
-        // WAHA API: POST /api/checkNumberStatus
+        // WAHA API: POST /api/default/contacts/check-exists
         const response = await axios({
-            method: "POST",
-            url: `${WAHA_URL}/api/checkNumberStatus`,
+            method: "GET",
+            url: `${WAHA_URL}/api/contacts/check-exists?phone=${formattedPhone.replace("+", "")}&session=default`,
             headers: { 
                 "X-Api-Key": WAHA_API_KEY,
                 "Content-Type": "application/json"
-            },
-            data: {
-                session: "default", // ou utiliser une session spécifique
-                phone: formattedPhone.replace("+", "") // WAHA attend sans le +
             },
             timeout: 30000,
         });

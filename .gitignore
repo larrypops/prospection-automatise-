@@ -1,1 +1,12 @@
 .env
+# Fichiers d'environnement (secrets)
+.env
+docker/.env
+
+# Variantes courantes (recommandé pour couvrir tous les cas)
+*.env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.example   # ← optionnel : garde-le si tu veux un template commitable

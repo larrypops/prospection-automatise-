@@ -137,10 +137,11 @@ class GoogleMapsSpider(scrapy.Spider):
                 pass
 
             item = CompanyItem()
-            item["source"] = "google_maps"
-            item["source_url"] = response.url
-            item["job_id"] = self.job_id
-            item["city"] = self.location.split(",")[0].strip()
+            item["source"]       = "google_maps"
+            item["source_url"]   = response.url
+            item["job_id"]       = self.job_id
+            item["city"]         = self.location.split(",")[0].strip()
+            item["scrape_query"] = self.query  # ← AJOUT
 
             m = re.search(r"0x[0-9a-f]+:0x[0-9a-f]+", response.url)
             if m:
@@ -183,7 +184,7 @@ class GoogleMapsSpider(scrapy.Spider):
 
             m = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", response.url)
             if m:
-                item["latitude"] = float(m.group(1))
+                item["latitude"]  = float(m.group(1))
                 item["longitude"] = float(m.group(2))
 
             if item.get("name"):

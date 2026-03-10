@@ -1,0 +1,68 @@
+Tu vas modifier le projet de prospection automatisée pour ajouter la fonctionnalité de recherche par mot-clé de scraping.
+
+Contexte : actuellement quand on scrape des entreprises avec un mot-clé comme "École privée" ou "Restaurant Yaoundé", ce mot-clé n'est pas sauvegardé dans la table companies. On ne peut donc pas retrouver une entreprise en cherchant le mot-clé qui a permis de la scraper.
+
+Voici exactement ce que tu dois faire :
+
+---
+
+ÉTAPE 1 — Créer le fichier database/migration_add_scrape_query.sql
+
+Contenu :
+- ALTER TABLE companies ADD COLUMN IF NOT EXISTS scrape_query VARCHAR(500)
+- CREATE INDEX IF NOT EXISTS idx_companies_scrape_query ON companies(scrape_query)
+- CREATE INDEX IF NOT EXISTS idx_companies_scrape_query_trgm ON companies USING gin(scrape_query gin_trgm_ops)
+
+---
+
+ÉTAPE 2 — Modifier scraper/items.py
+
+Ajouter le champ scrape_query = scrapy.Field() dans la classe CompanyItem, après le champ tags.
+
+---
+
+ÉTAPE 3 — Modifier scraper/spiders/google_maps_spider.py
+
+Dans la méthode qui yield les items, ajouter cette ligne juste avant chaque yield item :
+item["scrape_query"] = self.query
+
+---
+
+ÉTAPE 4 — Modifier scraper/spiders/meta_ads_spider.py
+
+Même chose : ajouter item["scrape_query"] = self.query avant chaque yield item.
+
+---
+
+ÉTAPE 5 — Modifier scraper/spiders/pagesjaunes_cm_spider.py
+
+Même chose : ajouter item["scrape_query"] = self.query avant chaque yield item.
+
+---
+
+ÉTAPE 6 — Modifier scraper/pipelines/postgres.py
+
+6a. Dans process_item, dans le dictionnaire data, ajouter :
+"scrape_query": a.get("scrape_query"),
+
+6b. Dans la méthode _upsert_by_place_id, ajouter scrape_query dans la liste des colonnes du INSERT et dans les VALUES. Dans le ON CONFLICT DO UPDATE SET, ajouter :
+scrape_query = COALESCE(companies.scrape_query, EXCLUDED.scrape_query)
+
+6c. Dans la méthode _upsert_by_name_city, ajouter scrape_query dans la liste des colonnes du INSERT et dans les VALUES.
+
+---
+
+ÉTAPE 7 — Modifier backend/routes/companies.js
+
+Trouver le bloc de code qui gère le paramètre search dans la route GET /api/companies. Actuellement il cherche sur name, phone et phone_whatsapp. Modifier ce bloc pour ajouter scrape_query dans la recherche ILIKE. La condition doit devenir :
+(name ILIKE $N OR phone ILIKE $N OR phone_whatsapp ILIKE $N OR scrape_query ILIKE $N)
+
+---
+
+ÉTAPE 8 — Ajouter une route dédiée dans backend/routes/companies.js
+
+Ajouter une nouvelle route GET /api/companies/by-keyword/:keyword qui retourne toutes les entreprises dont le scrape_query correspond au mot-clé, avec pagination (limit, page), et qui retourne aussi les stats : total trouvé, répartition par source, répartition par ville.
+
+---
+
+   

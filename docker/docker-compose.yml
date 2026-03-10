@@ -132,6 +132,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      EMAIL_MIN_DELAY: ${EMAIL_MIN_DELAY:-60}
+      EMAIL_MAX_DELAY: ${EMAIL_MAX_DELAY:-180}
       # PostgreSQL via réseau pg_default
       DATABASE_URL: postgresql://${POSTGRES_USER:-prospection_user}:${POSTGRES_PASSWORD}@pg-db-1:5432/${POSTGRES_DB:-prospection}
       REDIS_URL: redis://:${REDIS_PASSWORD:-RedisPass2024!}@redis:6379

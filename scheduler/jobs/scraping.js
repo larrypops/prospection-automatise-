@@ -4,29 +4,26 @@ const logger = require("../logger");
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://prospection-backend:4000";
 
-// Liste des 50 catégories
+// Liste des catégories
 const CATEGORIES = [
-    "École privée", "École bilingue", "École maternelle privée", "Collège privé", "Lycée privé",
-    "Université privée", "Institut supérieur", "Centre de formation professionnelle",
-    "Clinique privée", "Centre médical", "Cabinet médical", "Cabinet dentaire",
-    "Laboratoire d'analyses médicales", "Centre de radiologie", "Pharmacie", "Hôpital privé",
-    "Supermarché", "Supérette", "Grossiste alimentaire", "Dépôt de boisson",
-    "Quincaillerie", "Magasin de matériaux de construction", "Boutique de téléphones",
-    "Boutique d'électroménager", "Boutique de vêtements", "Entreprise de distribution",
-    "Hôtel", "Résidence hôtelière", "Restaurant", "Fast food", "Boulangerie", "Pâtisserie", "Lounge bar",
-    "Entreprise de construction", "Société de BTP", "Promoteur immobilier", "Agence immobilière",
-    "Bureau d'étude technique", "Société d'ingénierie", "Entreprise de travaux publics",
-    "Garage automobile", "Concessionnaire automobile", "Vente de pièces détachées", "Atelier mécanique",
-    "Société SARL", "Groupe", "Holding", "Entreprise privée", "Société de services", "Entreprise industrielle"
+    "École privée", "École bilingue", "École maternelle", "Collège privé", "Lycée privé", "Université privée", "Institut supérieur", "Centre de formation",
+"Supermarché", "Supérette", "Grossiste alimentaire", "Dépôt de boissons", "Quincaillerie", "Matériaux de construction", "Boutique téléphones", "Électroménager", "Vêtements", "Distribution",
+"Hôtel", "Résidence hôtelière", "Boulangerie", "Pâtisserie", "Lounge bar",
+"Construction", "BTP", "Promoteur immobilier", "Agence immobilière", "Bureau d’études techniques", "Travaux publics",
+"Garage", "Concessionnaire", "Pièces détachées", "Atelier mécanique",
+"Société", "SARL", "Groupe", "Holding", "Services", "Industrie",
+"Start-up", "PME", "Micro-entreprise", "Commerçant", "Artisan", "Prestataire de services", "Consultant", "Agence communication", "Agence digitale", "Agence marketing", "Développeur logiciel", "Freelance", "Auto-entrepreneur",
+"Logistique", "Transporteur", "Livraison", "Événementiel", "Organisateur événements", "Traiteur",
+"Coiffeur", "Esthéticien", "Salon beauté", "Spa", "Photographie", "Agence voyages", "Tour-opérateur", "Location véhicules",
+"Coaching", "Recrutement", "Cabinet RH", "Sécurité", "Nettoyage", "Maintenance",
+"Production audiovisuelle", "Design", "Studio création", "Architecture", "Ingénierie environnementale",
+"Services éducatifs", "Loisirs", "Transport", "Réparation automobile", "Conseil stratégique", "Fabrication meubles", "Menuiserie", "Électricité", "Plomberie", "Rénovation", "Décoration", "Nettoyage industriel"
 ];
 
 // Villes disponibles
 const CITIES = [
     "Yaoundé, Cameroun",
     "Douala, Cameroun",
-    "Bafoussam, Cameroun",
-    "Kribi, Cameroun",
-    "Garoua, Cameroun"
 ];
 
 /**
@@ -52,13 +49,11 @@ function sleep(ms) {
  * Lance un job de scraping et attend sa complétion
  */
 async function launchScraperJob(endpoint, payload, jobName) {
-    const startTime = Date.now();
     const timeoutMs = 30 * 60 * 1000; // 30 minutes timeout
     const pollIntervalMs = 2 * 60 * 1000; // 2 minutes polling
 
     try {
-        // Lancer le job
-        logger.info(`🚀 Lancement ${jobName}: ${payload.query} à ${payload.location}`);
+        logger.info(`Lancement ${jobName}: ${payload.query} à ${payload.location}`);
         const response = await axios.post(`${BACKEND_URL}${endpoint}`, payload, {
             timeout: 30000,
             headers: { "Content-Type": "application/json" }
@@ -69,7 +64,7 @@ async function launchScraperJob(endpoint, payload, jobName) {
             throw new Error("Pas de job_id retourné");
         }
 
-        logger.info(`⏳ Job ${jobName} démarré (ID: ${jobId})`);
+        logger.info(`Job ${jobName} démarré (ID: ${jobId})`);
 
         // Polling du statut
         let isDone = false;
@@ -90,27 +85,27 @@ async function launchScraperJob(endpoint, payload, jobName) {
 
                 if (status === "done") {
                     isDone = true;
-                    logger.info(`✅ ${jobName} terminé: ${items_scraped} leads en ${duration_sec}s`);
+                    logger.info(`${jobName} terminé: ${items_scraped} leads en ${duration_sec}s`);
                     return { success: true, items_scraped };
                 } else if (status === "failed") {
                     isDone = true;
-                    logger.error(`❌ ${jobName} échoué: ${error_message}`);
+                    logger.error(`${jobName} échoué: ${error_message}`);
                     return { success: false, error: error_message };
                 } else {
-                    logger.info(`⏳ ${jobName} toujours en cours (tentative ${attempts}/${maxAttempts})`);
+                    logger.info(`${jobName} toujours en cours (tentative ${attempts}/${maxAttempts})`);
                 }
             } catch (pollError) {
-                logger.warn(`⚠️  Erreur polling ${jobName}: ${pollError.message}`);
+                logger.warn(`Erreur polling ${jobName}: ${pollError.message}`);
             }
         }
 
         if (!isDone) {
-            logger.error(`⏱️  Timeout ${jobName} après ${timeoutMs / 60000} minutes`);
+            logger.error(`Timeout ${jobName} après ${timeoutMs / 60000} minutes`);
             return { success: false, error: "Timeout" };
         }
 
     } catch (error) {
-        logger.error(`❌ Erreur lancement ${jobName}:`, error.message);
+        logger.error(`Erreur lancement ${jobName}: ${error.message}`);
         return { success: false, error: error.message };
     }
 }
@@ -120,13 +115,13 @@ async function launchScraperJob(endpoint, payload, jobName) {
  */
 async function scrapingJob() {
     logger.info("═══════════════════════════════════════════════════════════");
-    logger.info("  🔍 DÉBUT DU SCRAPING");
+    logger.info("  DÉBUT DU SCRAPING");
     logger.info("═══════════════════════════════════════════════════════════");
 
     // 1. Mélanger et sélectionner 10 catégories
     const shuffledCategories = shuffleArray(CATEGORIES);
     const selectedCategories = shuffledCategories.slice(0, 10);
-    logger.info(`📋 Catégories sélectionnées: ${selectedCategories.join(", ")}`);
+    logger.info(`Catégories sélectionnées: ${selectedCategories.join(", ")}`);
 
     // 2. Sélectionner les 5 premières pour Google Maps + Meta Ads
     const categoriesForJobs = selectedCategories.slice(0, 5);
@@ -145,7 +140,7 @@ async function scrapingJob() {
             {
                 query: category,
                 location: city,
-                max_results: 150
+                max_results: 250
             },
             `Google Maps: ${category}`
         );
@@ -157,43 +152,40 @@ async function scrapingJob() {
         }
 
         // Attendre 30 secondes entre les jobs
-        logger.info("⏸️  Pause de 30s avant le prochain job...");
+        logger.info("Pause de 30s avant le prochain job...");
         await sleep(30000);
 
-        // Job Meta Ads (uniquement pour certaines catégories pertinentes)
-        if (category.includes("École") || category.includes("Clinique") || 
-            category.includes("Restaurant") || category.includes("Hôtel") ||
-            category.includes("Boutique") || category.includes("Entreprise")) {
-            
-            const metaAdsResult = await launchScraperJob(
-                "/api/scraper/meta-ads",
-                {
-                    query: category,
-                    location: city,
-                    country_code: "CM",
-                    max_results: 50
-                },
-                `Meta Ads: ${category}`
-            );
+        // Job Meta Ads
+        logger.info(`Lancement Meta Ads pour: ${category}`);
 
-            if (metaAdsResult.success) {
-                totalSuccess++;
-            } else {
-                totalFailed++;
-            }
+        const metaAdsResult = await launchScraperJob(
+            "/api/scraper/meta-ads",
+            {
+                query: category,
+                location: city,
+                country_code: "CM",
+                max_results: 150
+            },
+            `Meta Ads: ${category}`
+        );
 
-            // Attendre 30 secondes
-            logger.info("⏸️  Pause de 30s avant le prochain job...");
-            await sleep(30000);
+        if (metaAdsResult.success) {
+            totalSuccess++;
+        } else {
+            totalFailed++;
         }
-    }
+
+        // Attendre 30 secondes
+        logger.info("Pause de 30s avant le prochain job...");
+        await sleep(30000);
+    }   // ← fin du for (corrigé — accolade en trop supprimée)
 
     logger.info("═══════════════════════════════════════════════════════════");
-    logger.info(`  📊 RÉSULTATS SCRAPING: ${totalSuccess} succès, ${totalFailed} échecs`);
+    logger.info(`  RÉSULTATS SCRAPING: ${totalSuccess} succès, ${totalFailed} échecs`);
     logger.info("═══════════════════════════════════════════════════════════");
 
     // 4. Lancer la vérification WhatsApp automatique
-    logger.info("🔍 Lancement vérification WhatsApp automatique...");
+    logger.info("Lancement vérification WhatsApp automatique...");
     try {
         const verifyResponse = await axios.post(
             `${BACKEND_URL}/api/companies/bulk/check-whatsapp`,
@@ -201,12 +193,12 @@ async function scrapingJob() {
             { timeout: 10000 }
         );
         if (verifyResponse.data.success) {
-            logger.info("✅ Vérification WhatsApp démarrée en arrière-plan");
-            logger.info("⏳ Les leads seront vérifiés progressivement avant l'envoi");
+            logger.info("Vérification WhatsApp démarrée en arrière-plan");
+            logger.info("Les leads seront vérifiés progressivement avant l'envoi");
         }
     } catch (verifyError) {
-        logger.warn(`⚠️  Erreur lancement vérification WhatsApp: ${verifyError.message}`);
+        logger.warn(`Erreur lancement vérification WhatsApp: ${verifyError.message}`);
     }
-}
+}   // ← fin de scrapingJob
 
-module.exports = scrapingJob;
+module.exports = scrapingJob;   // ← replacé ici, en dehors de la fonction

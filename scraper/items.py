@@ -23,3 +23,4 @@ class CompanyItem(scrapy.Item):
     reviews_count    = scrapy.Field()
     job_id           = scrapy.Field()
     tags             = scrapy.Field()
+    scrape_query     = scrapy.Field()

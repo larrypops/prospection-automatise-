@@ -65,6 +65,7 @@ class PostgresPipeline:
             "rating":           a.get("rating"),
             "reviews_count":    a.get("reviews_count") or 0,
             "tags":             a.get("tags") or [],
+            "scrape_query":     a.get("scrape_query"),   # ← AJOUT
         }
 
         if not data["name"]:
@@ -93,13 +94,15 @@ class PostgresPipeline:
                 phone, phone_whatsapp, email, website,
                 address, city, region, country, latitude, longitude,
                 source, source_url, google_place_id, facebook_page_id,
-                rating, reviews_count, tags
+                rating, reviews_count, tags,
+                scrape_query
             ) VALUES (
                 %(name)s, %(category)s, %(sub_category)s, %(description)s,
                 %(phone)s, %(phone_whatsapp)s, %(email)s, %(website)s,
                 %(address)s, %(city)s, %(region)s, %(country)s, %(latitude)s, %(longitude)s,
                 %(source)s, %(source_url)s, %(google_place_id)s, %(facebook_page_id)s,
-                %(rating)s, %(reviews_count)s, %(tags)s
+                %(rating)s, %(reviews_count)s, %(tags)s,
+                %(scrape_query)s
             )
             ON CONFLICT (google_place_id) DO UPDATE SET
                 name           = EXCLUDED.name,
@@ -110,6 +113,7 @@ class PostgresPipeline:
                 website        = COALESCE(EXCLUDED.website,        companies.website),
                 rating         = COALESCE(EXCLUDED.rating,         companies.rating),
                 reviews_count  = COALESCE(EXCLUDED.reviews_count,  companies.reviews_count),
+                scrape_query   = COALESCE(companies.scrape_query,  EXCLUDED.scrape_query),
                 updated_at     = NOW()
             RETURNING (xmax = 0) AS is_new
         """, d)
@@ -126,13 +130,15 @@ class PostgresPipeline:
                 phone, phone_whatsapp, email, website,
                 address, city, region, country, latitude, longitude,
                 source, source_url, google_place_id, facebook_page_id,
-                rating, reviews_count, tags
+                rating, reviews_count, tags,
+                scrape_query
             ) VALUES (
                 %(name)s, %(category)s, %(sub_category)s, %(description)s,
                 %(phone)s, %(phone_whatsapp)s, %(email)s, %(website)s,
                 %(address)s, %(city)s, %(region)s, %(country)s, %(latitude)s, %(longitude)s,
                 %(source)s, %(source_url)s, %(google_place_id)s, %(facebook_page_id)s,
-                %(rating)s, %(reviews_count)s, %(tags)s
+                %(rating)s, %(reviews_count)s, %(tags)s,
+                %(scrape_query)s
             ) ON CONFLICT DO NOTHING RETURNING id
         """, d)
         if self.cur.fetchone():
@@ -150,45 +156,17 @@ class PostgresPipeline:
         """Convertit un numéro brut en format E164 pour WhatsApp (+237XXXXXXXXX)"""
         if not raw:
             return None
-        
-        # Nettoyage : garder uniquement chiffres et +
-        cleaned = re.sub(r'[^\d+]', '', str(raw))
-        
-        # Supprime les + en trop
-        if cleaned.count('+') > 1:
-            cleaned = '+' + cleaned.replace('+', '')
-        
-        # 1. Format international complet déjà présent (+237XXXXXXXX)
-        if re.match(r'^\+237[6-9]\d{8}$', cleaned):
-            return cleaned
-        
-        # 2. Format avec 00237 au début → convertir en +237
-        if re.match(r'^00237[6-9]\d{8}$', cleaned):
-            return '+237' + cleaned[5:]
-        
-        # 3. Format avec 237 au début mais sans + → ajouter +
-        if re.match(r'^237[6-9]\d{8}$', cleaned):
-            return '+' + cleaned
-        
-        # 4. Format local camerounais (commence par 6 ou 2 ou 3 et 9 chiffres)
-        if re.match(r'^[623]\d{8}$', cleaned):
-            return '+237' + cleaned
-        
-        # 5. Essayer phonenumbers comme fallback
+        cleaned = re.sub(r'[\s\-\.\(\)]', '', str(raw))
         try:
             parsed = phonenumbers.parse(cleaned, country)
             if phonenumbers.is_valid_number(parsed):
                 return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
         except:
             pass
-        
-        # 6. Dernier fallback pour les numéros avec indicatif
+        # Fallback Cameroun
         digits = re.sub(r'\D', '', cleaned)
         if len(digits) == 9 and digits[0] in ('6', '2', '3'):
             return f"+237{digits}"
         if len(digits) == 12 and digits.startswith('237'):
             return f"+{digits}"
-        if len(digits) == 13 and digits.startswith('00237'):
-            return f"+237{digits[5:]}"
-        
         return None

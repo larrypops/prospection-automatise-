@@ -5,7 +5,7 @@ const logger = require("../logger");
 const BACKEND_URL = process.env.BACKEND_URL || "http://prospection-backend:4000";
 const WA_MIN_DELAY = parseInt(process.env.WA_MIN_DELAY) || 30;
 const WA_MAX_DELAY = parseInt(process.env.WA_MAX_DELAY) || 120;
-const DAILY_LIMIT = parseInt(process.env.DAILY_LIMIT) || 20;
+const DAILY_LIMIT  = parseInt(process.env.DAILY_LIMIT)  || 80;
 
 /**
  * Génère un délai aléatoire entre min et max secondes
@@ -25,11 +25,18 @@ function sleep(ms) {
  * Construit le message personnalisé pour un lead
  */
 function buildMessage(leadName) {
-    return `Bonjour, je suis Larry Mbili de Lumora Data. Je vous contacte car j'analyse actuellement les entreprises comme ${leadName} afin de les aider à mettre en place des systèmes automatisés de gestion et de suivi financier.
+    return `Bonjour,
 
-Beaucoup d'établissements manquent de visibilité claire sur leurs performances, leurs flux et leur rentabilité.
+Je suis Larry Mbili, fondateur de Lumora Data.
 
-Est-ce que vous disposez déjà d'un système automatisé pour piloter votre activité et suivre vos chiffres en temps réel ?`;
+On aide des entreprises comme ${leadName} à automatiser leur gestion et intégrer l'IA dans leurs processus — pour que les tâches chronophages se fassent seules et que vous pilotiez votre activité depuis votre téléphone en temps réel.
+
+Nos clients récupèrent 2 à 3 heures par jour et prennent leurs décisions sur de vrais chiffres.
+
+Je serais ravi d'échanger 20 minutes avec vous par appel cette semaine et vous présenter une démo.
+
+Bonne journée,
+Larry`;
 }
 
 /**
@@ -37,90 +44,95 @@ Est-ce que vous disposez déjà d'un système automatisé pour piloter votre act
  */
 async function sendingJob() {
     logger.info("═══════════════════════════════════════════════════════════");
-    logger.info("  📤 DÉBUT ENVOI WHATSAPP (First Contact)");
+    logger.info("  DÉBUT ENVOI WHATSAPP (First Contact)");
+    logger.info(`  Limite journalière : ${DAILY_LIMIT} messages`);
     logger.info("═══════════════════════════════════════════════════════════");
 
     try {
-        // 1. Récupérer les leads avec WhatsApp
-        logger.info(`🔍 Récupération des leads avec WhatsApp (limite: ${DAILY_LIMIT})...`);
+        // 1. Récupérer les leads avec WhatsApp (on prend plus que la limite pour avoir du choix)
+        logger.info(`Récupération des leads avec WhatsApp (limite: ${DAILY_LIMIT})...`);
         const response = await axios.get(
             `${BACKEND_URL}/api/companies/new?limit=${DAILY_LIMIT}&has_whatsapp=true`,
             { timeout: 30000 }
         );
 
         const leads = response.data.data;
-        
+
         if (!leads || leads.length === 0) {
-            logger.info("ℹ️  Aucun nouveau lead à contacter");
+            logger.info("Aucun nouveau lead à contacter");
             return;
         }
 
-        logger.info(`📋 ${leads.length} leads à contacter`);
+        logger.info(`${leads.length} leads récupérés`);
 
         let successCount = 0;
-        let errorCount = 0;
+        let errorCount   = 0;
         let limitReached = false;
 
         // 2. Envoyer à chaque lead
         for (const lead of leads) {
-            if (limitReached) {
-                logger.warn("🚫 Limite journalière atteinte, arrêt des envois");
+
+            // ← Vérifier la limite AVANT chaque envoi
+            if (successCount >= DAILY_LIMIT) {
+                logger.warn(`Limite journalière atteinte (${DAILY_LIMIT} envois réussis)`);
+                limitReached = true;
                 break;
             }
+
+            if (limitReached) break;
 
             const message = buildMessage(lead.name);
 
             try {
-                logger.info(`📤 Envoi à ${lead.name} (${lead.phone_whatsapp})...`);
+                logger.info(`Envoi à ${lead.name} (${lead.phone_whatsapp})...`);
 
                 const sendResponse = await axios.post(
                     `${BACKEND_URL}/api/whatsapp/send`,
                     {
                         company_id: lead.id,
-                        to_number: lead.phone_whatsapp,
-                        message: message,
-                        skip_delay: true
+                        to_number:  lead.phone_whatsapp,
+                        message:    message,
+                        skip_delay: true,
                     },
                     { timeout: 60000 }
                 );
 
                 if (sendResponse.data.success) {
                     successCount++;
-                    logger.info(`✅ Envoyé à ${lead.name} (${lead.phone_whatsapp})`);
+                    logger.info(`[${successCount}/${DAILY_LIMIT}] Envoyé à ${lead.name} (${lead.phone_whatsapp})`);
                 } else {
                     errorCount++;
-                    logger.error(`❌ Échec envoi à ${lead.name}: ${sendResponse.data.error}`);
+                    logger.error(`Échec envoi à ${lead.name}: ${sendResponse.data.error}`);
                 }
 
             } catch (error) {
-                // Gestion erreur 429 (limite atteinte)
+                // Limite atteinte côté WAHA
                 if (error.response && error.response.status === 429) {
-                    logger.warn("🚫 Limite journalière atteinte (429)");
+                    logger.warn("Limite journalière atteinte côté WhatsApp (429)");
                     limitReached = true;
                     break;
                 }
 
                 errorCount++;
-                logger.error(`❌ Erreur envoi à ${lead.name}:`, error.message);
-                
-                // Continuer avec le lead suivant
+                logger.error(`Erreur envoi à ${lead.name}: ${error.message}`);
                 continue;
             }
 
-            // Délai aléatoire avant le prochain envoi (si ce n'est pas le dernier)
-            if (lead !== leads[leads.length - 1] && !limitReached) {
+            // Délai aléatoire avant le prochain envoi
+            if (!limitReached && lead !== leads[leads.length - 1]) {
                 const delay = getRandomDelay();
-                logger.info(`⏳ Attente ${(delay / 1000).toFixed(0)}s avant le prochain envoi...`);
+                logger.info(`Pause ${(delay / 1000).toFixed(0)}s avant le prochain envoi...`);
                 await sleep(delay);
             }
         }
 
         logger.info("═══════════════════════════════════════════════════════════");
-        logger.info(`  📊 RÉSULTATS: ${successCount} succès, ${errorCount} échecs`);
+        logger.info(`  RÉSULTATS: ${successCount} envoyés, ${errorCount} échecs`);
+        logger.info(`  Limite utilisée: ${successCount}/${DAILY_LIMIT}`);
         logger.info("═══════════════════════════════════════════════════════════");
 
     } catch (error) {
-        logger.error("❌ Erreur job sending:", error.message);
+        logger.error("Erreur job sending:", error.message);
         throw error;
     }
 }
